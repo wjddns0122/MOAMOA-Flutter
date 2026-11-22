@@ -10,6 +10,7 @@ import 'package:moamoa/features/vote/presentation/pages/vote_create_page.dart';
 import 'package:moamoa/features/vote/presentation/providers/vote_providers.dart';
 import 'package:moamoa/features/vote/presentation/viewmodels/vote_time_range.dart';
 import 'package:moamoa/features/vote/presentation/vote_format.dart';
+import 'package:moamoa/features/vote/presentation/widgets/vote_field.dart';
 import 'package:moamoa/features/vote/presentation/widgets/vote_time_sheet.dart';
 
 import '../../fakes/fake_vote_repository.dart';
@@ -170,6 +171,54 @@ void main() {
       expect(find.text('목록'), findsOneWidget);
       expect(await pushed, 21);
     });
+
+    testWidgets('만드는 중에는 상단 뒤로 버튼으로도 화면을 닫지 않고 끝나면 일정 id 를 돌려준다', (
+      tester,
+    ) async {
+      repository.createCompleter = Completer<int>();
+      final container = await pumpPage(tester);
+      fillAll(container);
+      await tester.pump();
+
+      await tester.tap(find.text('투표 시작하기'));
+      await tester.pump();
+      await tester.tap(find.byType(IconButton), warnIfMissed: false);
+      await tester.pump();
+
+      expect(find.byType(VoteCreatePage), findsOneWidget);
+
+      repository.createCompleter!.complete(21);
+      await tester.pumpAndSettle();
+
+      expect(find.text('목록'), findsOneWidget);
+      expect(await pushed, 21);
+    });
+
+    for (final (index, label) in [(1, '후보 날짜'), (2, '후보 시간'), (3, '투표 마감')]) {
+      testWidgets('만드는 중에는 "$label" 칸을 눌러도 입력 창을 열지 않는다', (tester) async {
+        tester.view.physicalSize = const Size(800, 1600);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        repository.createCompleter = Completer<int>();
+        final container = await pumpPage(tester);
+        fillAll(container);
+        await tester.pump();
+
+        await tester.tap(find.text('투표 시작하기'));
+        await tester.pump();
+        await tester.tap(find.byType(VoteField).at(index));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(BottomSheet), findsNothing);
+        expect(find.byType(DatePickerDialog), findsNothing);
+
+        repository.createCompleter!.complete(21);
+        await tester.pumpAndSettle();
+
+        expect(find.text('목록'), findsOneWidget);
+        expect(await pushed, 21);
+      });
+    }
 
     testWidgets('투표 마감을 지금 이전으로 고르면 마감 칸에 오류 문구를 보여준다', (tester) async {
       final container = await pumpPage(tester);

@@ -58,12 +58,12 @@ class VoteCreatePage extends ConsumerWidget {
         VoteCreateStatus.submitting;
 
     // 만드는 중에 닫으면 서버에는 투표가 생기지만 목록이 만든 id 를 받지 못해 갱신되지 않습니다.
-    // 시스템 뒤로가기·스와이프만 막습니다. 상단 바 버튼은 context.pop 이라 PopScope 를 거치지 않습니다.
+    // 시스템 뒤로가기·스와이프는 PopScope 가, 상단 바 버튼(context.pop 이라 PopScope 를 거치지 않음)은 backEnabled 가 막습니다.
     return PopScope(
       canPop: !submitting,
       child: Scaffold(
         backgroundColor: MoaColors.page,
-        appBar: MoaAppBar(),
+        appBar: MoaAppBar(backEnabled: !submitting),
         body: SafeArea(
           child: Column(
             children: [
@@ -99,7 +99,13 @@ class _CreateForm extends ConsumerWidget {
     );
   }
 
+  /// 만드는 중에는 입력 창을 열지 않습니다. 열려 있는 창이 있으면 성공 때 화면 대신 그 창이 닫힙니다.
+  bool _isSubmitting(WidgetRef ref) =>
+      ref.read(voteCreateProvider(meetingId)).status ==
+      VoteCreateStatus.submitting;
+
   Future<void> _pickDates(BuildContext context, WidgetRef ref) async {
+    if (_isSubmitting(ref)) return;
     final dates = ref.read(voteCreateProvider(meetingId)).dates;
     final picked = await _showSheet<List<DateTime>>(
       context,
@@ -109,6 +115,7 @@ class _CreateForm extends ConsumerWidget {
   }
 
   Future<void> _pickTimeRange(BuildContext context, WidgetRef ref) async {
+    if (_isSubmitting(ref)) return;
     final range = ref.read(voteCreateProvider(meetingId)).timeRange;
     final picked = await _showSheet<VoteTimeRange>(
       context,
@@ -121,6 +128,7 @@ class _CreateForm extends ConsumerWidget {
 
   /// 날짜를 고른 뒤 이어서 시간을 고릅니다. 오늘 이전 날짜는 고를 수 없고, 둘 중 하나라도 취소하면 그대로 둡니다.
   Future<void> _pickDeadline(BuildContext context, WidgetRef ref) async {
+    if (_isSubmitting(ref)) return;
     final current = ref.read(voteCreateProvider(meetingId)).voteDeadlineAt;
     final today = DateUtils.dateOnly(DateTime.now());
     final date = await showDatePicker(
