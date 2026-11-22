@@ -10,8 +10,11 @@ extension DioExceptionMapperX on DioException {
   ApiException toApiException() {
     final response = this.response;
     if (response == null) {
-      // 응답은 받았지만 본문을 해석하지 못한 경우 (잘못된 JSON 등). Dio 는 response 없이 넘깁니다.
-      if (error is FormatException) {
+      // 응답은 받았지만 본문을 해석하지 못한 경우. Dio 는 response 없이 넘깁니다.
+      // - 잘못된 JSON: FormatException
+      // - 최상위가 배열·문자열 등 기대한 타입이 아님: Dio 가 변환 중 난 TypeError(Error) 를 감쌉니다.
+      // 연결 실패·시간 초과는 SocketException 등 Exception 이라 여기에 걸리지 않습니다.
+      if (error is FormatException || error is Error) {
         return const ApiException(code: ApiErrorCode.unknown);
       }
       // 응답 자체를 받지 못한 경우 (연결 실패, 시간 초과, 요청 취소 등)

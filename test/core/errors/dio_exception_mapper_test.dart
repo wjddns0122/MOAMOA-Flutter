@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -100,6 +101,26 @@ void main() {
       expect(exception.message, isNull);
     });
 
+    test('응답 본문을 기대한 타입으로 바꾸다 난 오류는 network 가 아니라 unknown 으로 바꾼다', () {
+      final exception = DioException(
+        requestOptions: options,
+        type: DioExceptionType.unknown,
+        error: StateError('type cast'),
+      ).toApiException();
+
+      expect(exception, const ApiException(code: ApiErrorCode.unknown));
+    });
+
+    test('연결 실패처럼 Exception 이 원인이면 network 로 남는다', () {
+      final exception = DioException(
+        requestOptions: options,
+        type: DioExceptionType.unknown,
+        error: const OSError('unreachable'),
+      ).toApiException();
+
+      expect(exception, const ApiException(code: ApiErrorCode.network));
+    });
+
     // 실제 Dio 가 응답 본문(JSON)을 해석하다 실패하면 response 없이 FormatException 을 넘깁니다.
     for (final statusCode in [200, 500]) {
       test(
@@ -118,7 +139,49 @@ void main() {
         },
       );
     }
+
+    // Map 으로 받기로 한 요청에 최상위 배열·문자열이 오면 Dio 가 TypeError 를 DioException 으로 감쌉니다.
+    for (final body in ['[]', '"maintenance"']) {
+      test('HTTP 200 응답의 최상위가 $body 이면 network 가 아니라 unknown 으로 바꾼다', () async {
+        final dio = Dio()..httpClientAdapter = _StubJsonAdapter(200, body);
+
+        final exception = await dio
+            .get<Map<String, dynamic>>('/v1/meetings/1/notices')
+            .then<ApiException>(
+              (_) => fail('요청이 성공하면 안 됩니다.'),
+              onError: (Object e) => (e as DioException).toApiException(),
+            );
+
+        expect(exception, const ApiException(code: ApiErrorCode.unknown));
+      });
+    }
   });
+}
+
+/// 정해 둔 JSON 본문을 돌려주는 Dio 어댑터
+class _StubJsonAdapter implements HttpClientAdapter {
+  _StubJsonAdapter(this.statusCode, this.body);
+
+  final int statusCode;
+  final String body;
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    return ResponseBody.fromString(
+      body,
+      statusCode,
+      headers: {
+        Headers.contentTypeHeader: [Headers.jsonContentType],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
 }
 
 /// Content-Type 은 JSON 인데 본문이 깨진 응답을 돌려주는 Dio 어댑터

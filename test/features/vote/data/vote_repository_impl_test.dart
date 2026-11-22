@@ -234,5 +234,48 @@ void main() {
         ),
       );
     });
+
+    // 최상위가 배열·문자열이면 Dio 가 TypeError 를 DioException 으로 감싸 넘깁니다. 연결 실패(network)로 보이면 안 됩니다.
+    final calls = <String, Future<Object?> Function()>{
+      '생성': () => repository.createVote(
+        meetingId: 1,
+        title: '10월 정기 모임',
+        voteDeadlineAt: DateTime.utc(2099, 10, 12),
+        meetingTimes: [DateTime.utc(2099, 10, 13, 9)],
+      ),
+      '조회': () => repository.getVote(meetingId: 1, scheduleId: 21),
+      '제출': () => repository.submitMyVote(
+        meetingId: 1,
+        scheduleId: 21,
+        meetingTimes: const [],
+      ),
+      '참여 현황': () => repository.getVoteResponses(meetingId: 1, scheduleId: 21),
+      '확정': () => repository.confirmSchedule(
+        meetingId: 1,
+        scheduleId: 21,
+        meetingTime: DateTime.utc(2099, 10, 13, 9),
+      ),
+    };
+    for (final MapEntry(key: name, value: call) in calls.entries) {
+      for (final body in ['[]', '"maintenance"']) {
+        test(
+          '$name 응답의 최상위가 $body 이면 network 가 아니라 unknown 코드의 ApiException 을 던진다',
+          () async {
+            respond(200, body);
+
+            await expectLater(
+              call(),
+              throwsA(
+                isA<ApiException>().having(
+                  (e) => e.code,
+                  'code',
+                  ApiErrorCode.unknown,
+                ),
+              ),
+            );
+          },
+        );
+      }
+    }
   });
 }
