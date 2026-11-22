@@ -73,13 +73,14 @@ class VotePage extends ConsumerWidget {
     final isAdmin = ref.watch(voteAdminProvider(meetingId));
 
     // 확정 중에 닫으면 목록이 결과를 받지 못해 갱신되지 않습니다.
-    // 시스템 뒤로가기·스와이프만 막습니다. 상단 바 버튼은 context.pop 이라 PopScope 를 거치지 않습니다.
+    // 시스템 뒤로가기·스와이프는 PopScope 가, 상단 바 버튼(context.pop 이라 PopScope 를 거치지 않음)은 backEnabled 가 막습니다.
     return PopScope(
       canPop: !confirming,
       child: Scaffold(
         backgroundColor: MoaColors.page,
         // 공유 버튼은 투표를 불러온 뒤에만 보여줍니다.
         appBar: MoaAppBar(
+          backEnabled: !confirming,
           actions: [
             if (vote.value case final loaded?) _ShareButton(vote: loaded),
           ],
@@ -530,10 +531,6 @@ class _ResponsesCard extends ConsumerWidget {
       );
     }
 
-    final unresponded = ref
-        .watch(voteResponsesProvider(id))
-        .value
-        ?.unrespondedNamesLabel;
     return Container(
       margin: const EdgeInsets.only(top: 12),
       padding: const EdgeInsets.all(16),
@@ -582,14 +579,44 @@ class _ResponsesCard extends ConsumerWidget {
                 ),
             ],
           ),
-          if (unresponded != null)
-            Text(
-              unresponded,
-              style: MoaText.sub.copyWith(color: MoaColors.textSecondary),
-            ),
+          _UnrespondedNames(id: id),
         ],
       ),
     );
+  }
+}
+
+/// 미응답 구성원 이름입니다. 응답 현황 조회(5-4)는 투표 조회(5-2)와 따로 실패할 수 있어서
+/// 불러오는 중·실패·모두 응답함을 구분합니다. 투표 표와 응답 수는 이 조회와 상관없이 그대로 보입니다.
+class _UnrespondedNames extends ConsumerWidget {
+  const _UnrespondedNames({required this.id});
+
+  final VoteId id;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final style = MoaText.sub.copyWith(color: MoaColors.textSecondary);
+    final responses = ref.watch(voteResponsesProvider(id));
+
+    if (responses.hasError && !responses.isLoading) {
+      return Row(
+        children: [
+          Expanded(child: Text('미응답 이름을 불러오지 못했어요', style: style)),
+          TextButton(
+            onPressed: () => ref.invalidate(voteResponsesProvider(id)),
+            child: const Text('다시 시도'),
+          ),
+        ],
+      );
+    }
+    if (responses.value case final loaded?) {
+      final names = loaded.unrespondedNamesLabel;
+      // 모두 응답했으면 보여줄 이름이 없습니다.
+      return names == null
+          ? const SizedBox.shrink()
+          : Text(names, style: style);
+    }
+    return Text('미응답 이름을 불러오는 중이에요', style: style);
   }
 }
 

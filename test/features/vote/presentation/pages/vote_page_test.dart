@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +12,8 @@ import 'package:moamoa/features/group/presentation/providers/group_providers.dar
 import 'package:moamoa/features/schedule/presentation/schedule_format.dart';
 import 'package:moamoa/features/vote/domain/entities/vote.dart';
 import 'package:moamoa/features/vote/domain/entities/vote_candidate.dart';
+import 'package:moamoa/features/vote/domain/entities/vote_member_response.dart';
+import 'package:moamoa/features/vote/domain/entities/vote_responses.dart';
 import 'package:moamoa/features/vote/domain/entities/vote_status.dart';
 import 'package:moamoa/features/vote/presentation/pages/vote_page.dart';
 import 'package:moamoa/features/vote/presentation/providers/vote_providers.dart';
@@ -209,6 +213,67 @@ void main() {
       expect(find.byType(VotePage), findsOneWidget);
       expect(find.text('확정'), findsOneWidget);
       expect(find.text('일정 확정하기'), findsNothing);
+    });
+
+    testWidgets('확정하는 중에는 상단 뒤로 버튼으로도 화면을 닫지 않고 끝나면 true 를 돌려준다', (
+      tester,
+    ) async {
+      repository.confirmCompleter = Completer<void>();
+      await pumpPage(tester);
+      await openConfirmSheet(tester);
+      await tester.tap(find.text('이 시간으로 확정'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(IconButton).first);
+      await tester.pump();
+
+      expect(find.byType(VotePage), findsOneWidget);
+
+      repository.confirmCompleter!.complete();
+      await tester.pumpAndSettle();
+
+      expect(await pushed, isTrue);
+      expect(find.text('목록'), findsOneWidget);
+    });
+
+    testWidgets('미응답 이름만 불러오지 못하면 투표 표와 응답 수는 두고 안내와 다시 시도를 보여준다', (
+      tester,
+    ) async {
+      repository.responsesError = const ApiException(
+        code: ApiErrorCode.network,
+      );
+      await pumpPage(tester);
+
+      expect(find.text('7/8명'), findsOneWidget);
+      expect(find.text('미응답 이름을 불러오지 못했어요'), findsOneWidget);
+      expect(find.text('미응답 이름 미설정'), findsNothing);
+
+      repository.responsesError = null;
+      await tester.tap(find.text('다시 시도'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('미응답 이름을 불러오지 못했어요'), findsNothing);
+      expect(find.text('미응답 이름 미설정'), findsOneWidget);
+    });
+
+    testWidgets('미응답 이름을 불러오는 중이면 그렇게 안내하고, 모두 응답했으면 이름 줄이 없다', (tester) async {
+      repository.responsesCompleter = Completer<VoteResponses>();
+      await pumpPage(tester);
+
+      expect(find.text('미응답 이름을 불러오는 중이에요'), findsOneWidget);
+
+      repository.responsesCompleter!.complete(
+        const VoteResponses(
+          memberCount: 1,
+          respondedCount: 1,
+          members: [VoteMemberResponse(memberId: 1, responded: true)],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('미응답 이름을 불러오는 중이에요'), findsNothing);
+      expect(find.text('미응답 이름을 불러오지 못했어요'), findsNothing);
+      expect(find.textContaining('미응답 '), findsNothing);
     });
 
     // 시안(Figma)과 맞춘 부분: 알약 너비, 상태별 안내 문구, 일정 보기, 공유, 확정 시트 안전영역

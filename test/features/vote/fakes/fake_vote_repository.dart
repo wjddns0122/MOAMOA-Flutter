@@ -24,6 +24,12 @@ class FakeVoteRepository implements VoteRepository {
   /// 지정하면 일정 확정만 이 예외를 던집니다. (조회는 성공하는 상황)
   Object? confirmError;
 
+  /// 지정하면 참여 현황 조회(5-4)만 이 예외를 던집니다. (투표 조회는 성공하는 상황)
+  Object? responsesError;
+
+  /// 지정하면 참여 현황 조회가 이 Completer 가 끝날 때까지 기다립니다. (불러오는 중 상태 확인용)
+  Completer<VoteResponses>? responsesCompleter;
+
   final List<Map<String, Object?>> createCalls = [];
   final List<Map<String, Object?>> submitCalls = [];
   final List<Map<String, Object?>> confirmCalls = [];
@@ -78,7 +84,8 @@ class FakeVoteRepository implements VoteRepository {
     required int meetingId,
     required int scheduleId,
   }) async {
-    if (error != null) throw error!;
+    if ((error ?? responsesError) case final e?) throw e;
+    if (responsesCompleter case final completer?) return completer.future;
     return responses!;
   }
 
