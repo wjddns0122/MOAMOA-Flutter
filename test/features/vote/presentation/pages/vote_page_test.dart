@@ -758,6 +758,34 @@ void main() {
       expect(disabled('내 시간 저장'), isFalse);
     });
 
+    testWidgets('저장하는 중에는 칸을 눌러도 선택이 바뀌지 않고, 저장한 선택 그대로 안내한다', (tester) async {
+      repository.submitCompleter = Completer<void>();
+      await pumpPage(tester, role: MemberRole.member);
+
+      await tester.tap(find.text('7')); // 10/14 19:00 을 더 골라 저장
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('내 시간 저장'));
+      await tester.pump();
+      await tester.tap(find.text('0')); // 저장 중에 다른 칸을 누름
+      await tester.pump();
+
+      repository.submitCompleter!.complete();
+      await tester.pumpAndSettle();
+      ScaffoldMessenger.of(tester.element(find.byType(VotePage)))
+          .hideCurrentSnackBar();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('내 시간 저장')); // 화면 선택이 저장한 선택과 같은지 다시 저장해 확인
+      await tester.pumpAndSettle();
+
+      expect(repository.submitCalls, hasLength(2));
+      for (final call in repository.submitCalls) {
+        expect(call['meetingTimes'], [
+          DateTime(2099, 10, 13, 19),
+          DateTime(2099, 10, 14, 19),
+        ]);
+      }
+    });
+
     // 후보가 많을 때(Figma "후보가 많을 때"): 날짜 5개 × 시각 10줄
     group('후보가 많을 때', () {
       Vote manyVote() => sampleVote().copyWith(

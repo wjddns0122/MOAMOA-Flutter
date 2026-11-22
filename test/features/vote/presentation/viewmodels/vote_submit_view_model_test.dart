@@ -128,5 +128,36 @@ void main() {
       expect(repository.submitCalls, hasLength(1));
       expect(state().status, VoteSubmitStatus.success);
     });
+
+    test('제출 중에 화면이 닫히고 같은 투표가 다시 열려도 끝나면 그 화면의 조회를 갱신한다', () async {
+      final completer = Completer<void>();
+      repository.submitCompleter = completer;
+      // 위에서 만든 container 는 화면 구독을 놓을 수 없어서, 닫고 다시 여는 상황은 따로 만듭니다.
+      final screenContainer = ProviderContainer(
+        overrides: [voteRepositoryProvider.overrideWithValue(repository)],
+      );
+      addTearDown(screenContainer.dispose);
+      final oldScreen = screenContainer.listen(
+        voteSubmitProvider(id),
+        (_, _) {},
+      );
+      final pending = screenContainer
+          .read(voteSubmitProvider(id).notifier)
+          .submit([first]);
+      await Future<void>.delayed(Duration.zero);
+
+      oldScreen.close(); // 화면이 닫힘
+      await Future<void>.delayed(Duration.zero); // autoDispose 가 처리될 시간
+      // 같은 투표를 다시 열어 저장 전 조회가 끝난 상태
+      screenContainer.listen(voteProvider(id), (_, _) {});
+      await screenContainer.read(voteProvider(id).future);
+      final callsBeforeSaved = repository.getVoteCallCount;
+
+      completer.complete();
+      await pending;
+      await screenContainer.read(voteProvider(id).future);
+
+      expect(repository.getVoteCallCount, callsBeforeSaved + 1);
+    });
   });
 }

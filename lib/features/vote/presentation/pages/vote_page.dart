@@ -131,6 +131,11 @@ class _VotePageState extends ConsumerState<VotePage> {
       (previous, next) => _onConfirmChanged(context, previous, next),
     );
     ref.listen(voteSubmitProvider(_id), _onSubmitChanged);
+    // 저장하는 중에 칸을 바꾸면 보내는 선택과 화면 선택이 달라져, 저장됐다는 안내가 틀린 선택을 가리킵니다.
+    final saving = ref.watch(
+      voteSubmitProvider(_id)
+          .select((s) => s.status == VoteSubmitStatus.submitting),
+    );
     final confirming = ref.watch(
       voteConfirmProvider(_id)
           .select((s) => s.status == VoteConfirmStatus.submitting),
@@ -178,7 +183,7 @@ class _VotePageState extends ConsumerState<VotePage> {
                           selected: vote.votingOpen
                               ? _selectedOf(vote)
                               : vote.mineTimes,
-                          onToggle: vote.votingOpen
+                          onToggle: vote.votingOpen && !saving
                               ? (time) => _toggle(vote, time)
                               : null,
                         ),

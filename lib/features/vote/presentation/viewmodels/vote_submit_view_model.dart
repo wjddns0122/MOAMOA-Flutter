@@ -12,6 +12,7 @@ import 'vote_submit_status.dart';
 ///
 /// 어떤 칸을 골랐는지는 화면 안에서만 쓰는 값이라 여기서 들고 있지 않고, 제출할 때 넘겨받습니다.
 /// 제출이 끝나면 내 선택·칸별 가능 인원·응답 인원이 바뀌므로 투표를 다시 불러옵니다.
+/// 제출 중에 화면을 닫고 같은 투표를 다시 열어도 이 결과가 새 화면의 조회에 반영되도록, 요청이 끝날 때까지는 autoDispose 를 미룹니다.
 class VoteSubmitViewModel extends Notifier<VoteSubmitState> {
   VoteSubmitViewModel({required VoteId id}) : _id = id;
 
@@ -25,6 +26,9 @@ class VoteSubmitViewModel extends Notifier<VoteSubmitState> {
   Future<void> submit(List<DateTime> meetingTimes) async {
     if (state.status == VoteSubmitStatus.submitting) return; // 중복 탭 방지
     state = const VoteSubmitState(status: VoteSubmitStatus.submitting);
+    // 요청 중에 화면이 닫혀도 서버는 저장합니다. 이 Provider 가 먼저 사라지면 invalidate 를 할 수 없어서,
+    // 다시 열린 화면이 저장 전 조회 결과에 남습니다. 요청이 끝날 때까지만 유지합니다.
+    final keepAlive = ref.keepAlive();
 
     try {
       await ref.read(submitMyVoteProvider)(
@@ -34,7 +38,7 @@ class VoteSubmitViewModel extends Notifier<VoteSubmitState> {
           meetingTimes: meetingTimes,
         ),
       );
-      if (!ref.mounted) return; // 제출 중에 화면이 닫힌 경우
+      if (!ref.mounted) return; // 앱이 종료되는 경우
       ref
         ..invalidate(voteProvider(_id))
         ..invalidate(voteResponsesProvider(_id));
@@ -47,6 +51,8 @@ class VoteSubmitViewModel extends Notifier<VoteSubmitState> {
         status: VoteSubmitStatus.failure,
         errorMessage: e.userMessage,
       );
+    } finally {
+      keepAlive.close();
     }
   }
 }
