@@ -18,6 +18,9 @@ class FakeVoteRepository implements VoteRepository {
   /// 지정하면 투표 만들기가 이 Completer 가 끝날 때까지 기다립니다. (제출 중 상태 확인용)
   Completer<int>? createCompleter;
 
+  /// 지정하면 투표 조회가 이 Completer 가 끝날 때까지 기다립니다. (다시 불러오는 중 상태 확인용)
+  Completer<Vote>? voteCompleter;
+
   /// 지정하면 일정 확정이 이 Completer 가 끝날 때까지 기다립니다. (확정 중 상태 확인용)
   Completer<void>? confirmCompleter;
 
@@ -68,6 +71,7 @@ class FakeVoteRepository implements VoteRepository {
   }) async {
     getVoteCallCount++;
     if (error != null) throw error!;
+    if (voteCompleter case final completer?) return completer.future;
     return vote!;
   }
 

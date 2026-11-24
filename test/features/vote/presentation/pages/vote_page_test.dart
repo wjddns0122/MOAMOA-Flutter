@@ -786,6 +786,101 @@ void main() {
       }
     });
 
+    testWidgets(
+      '저장 중 닫았다가 다시 열면, 저장 뒤 새 투표를 받기 전까지 칸·저장을 막아 저장 전 선택을 다시 보내지 않는다',
+      (tester) async {
+        repository.submitCompleter = Completer<void>();
+        await pumpPage(tester, role: MemberRole.member);
+        await tester.tap(find.text('7')); // 10/14 19:00 을 더 골라 저장
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('내 시간 저장'));
+        await tester.pump();
+        await tester.tap(find.byType(IconButton).first); // 저장 중에 닫음
+        await tester.pumpAndSettle();
+        expect(find.text('목록'), findsOneWidget);
+
+        // 같은 투표를 다시 엽니다. 서버는 아직 저장 전 선택(10/13 19:00)을 돌려줍니다.
+        unawaited(
+          GoRouter.of(tester.element(find.text('목록'))).push<Object?>('/vote'),
+        );
+        await tester.pumpAndSettle();
+        // 저장이 끝나고, 저장 뒤 조회는 늦게 옵니다.
+        repository.voteCompleter = Completer<Vote>();
+        repository.submitCompleter!.complete();
+        await tester.pump();
+        await tester.pump();
+
+        await tester.tap(find.text('5')); // 다시 불러오는 중에 칸을 누름
+        await tester.tap(find.text('내 시간 저장'));
+        await tester.pump();
+        expect(repository.submitCalls, hasLength(1));
+
+        repository.voteCompleter!.complete(
+          sampleVote().copyWith(
+            candidates: [
+              for (final c in sampleVote().candidates)
+                c.meetingTime == DateTime(2099, 10, 14, 19)
+                    ? c.copyWith(selectedByMe: true)
+                    : c,
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        ScaffoldMessenger.of(tester.element(find.byType(VotePage)))
+            .hideCurrentSnackBar();
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('내 시간 저장'));
+        await tester.pumpAndSettle();
+
+        expect(repository.submitCalls, hasLength(2));
+        expect(repository.submitCalls.last['meetingTimes'], [
+          DateTime(2099, 10, 13, 19),
+          DateTime(2099, 10, 14, 19),
+        ]);
+      },
+    );
+
+    testWidgets('같은 화면에서 투표 번호만 바뀌면 이전 투표에서 고른 칸을 버린다', (tester) async {
+      final router = GoRouter(
+        initialLocation: '/meetings/1/schedule-votes/7',
+        routes: [
+          GoRoute(
+            path: '/meetings/:meetingId/schedule-votes/:scheduleId',
+            builder: (_, state) => VotePage(
+              meetingId: 1,
+              scheduleId: int.parse(state.pathParameters['scheduleId']!),
+            ),
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          retry: (_, _) => null,
+          overrides: [
+            voteRepositoryProvider.overrideWithValue(repository),
+            groupMyRoleProvider.overrideWith(
+              (ref, groupId) async => MemberRole.member,
+            ),
+          ],
+          child: MaterialApp.router(routerConfig: router),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('7')); // 투표 7 에서 10/14 19:00 을 더 고름
+      await tester.pumpAndSettle();
+
+      router.go('/meetings/1/schedule-votes/8');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('내 시간 저장'));
+      await tester.pumpAndSettle();
+
+      expect(repository.submitCalls.single['scheduleId'], 8);
+      // 투표 8 의 서버 선택(10/13 19:00)만 보냅니다.
+      expect(repository.submitCalls.single['meetingTimes'], [
+        DateTime(2099, 10, 13, 19),
+      ]);
+    });
+
     // 후보가 많을 때(Figma "후보가 많을 때"): 날짜 5개 × 시각 10줄
     group('후보가 많을 때', () {
       Vote manyVote() => sampleVote().copyWith(

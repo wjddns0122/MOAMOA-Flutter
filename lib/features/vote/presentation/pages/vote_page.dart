@@ -62,6 +62,17 @@ class _VotePageState extends ConsumerState<VotePage> {
 
   Set<DateTime> _selectedOf(Vote vote) => _selected ?? vote.mineTimes;
 
+  /// 같은 route 에서 투표 번호만 바뀌면(go) 이 State 를 그대로 쓰므로, 이전 투표에서 고른 칸을 버립니다.
+  /// 남겨 두면 새 투표 번호로 이전 투표의 선택을 저장합니다.
+  @override
+  void didUpdateWidget(VotePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.meetingId != widget.meetingId ||
+        oldWidget.scheduleId != widget.scheduleId) {
+      _selected = null;
+    }
+  }
+
   /// 칸을 누르면 고른 칸이면 빼고, 아니면 더합니다.
   void _toggle(Vote vote, DateTime meetingTime) {
     final next = {..._selectedOf(vote)};
@@ -141,6 +152,9 @@ class _VotePageState extends ConsumerState<VotePage> {
           .select((s) => s.status == VoteConfirmStatus.submitting),
     );
     final vote = ref.watch(voteProvider(_id));
+    // 저장·확정 뒤 다시 불러오는 동안에는 지난 투표가 보입니다. 고른 칸이 없으면(다시 연 화면) 지난 내 선택을 보내게 되어
+    // 방금 저장한 응답을 되돌리므로, 새 투표를 받을 때까지 칸 선택과 저장·확정을 막습니다.
+    final refreshing = vote.isLoading;
     final isAdmin = ref.watch(voteAdminProvider(widget.meetingId));
 
     // 확정 중에 닫으면 목록이 결과를 받지 못해 갱신되지 않습니다.
@@ -183,7 +197,7 @@ class _VotePageState extends ConsumerState<VotePage> {
                           selected: vote.votingOpen
                               ? _selectedOf(vote)
                               : vote.mineTimes,
-                          onToggle: vote.votingOpen && !saving
+                          onToggle: vote.votingOpen && !saving && !refreshing
                               ? (time) => _toggle(vote, time)
                               : null,
                         ),
@@ -192,7 +206,12 @@ class _VotePageState extends ConsumerState<VotePage> {
                     ),
                   ),
                 ),
-                _ActionBar(id: _id, vote: vote, onSave: () => _save(vote)),
+                _ActionBar(
+                  id: _id,
+                  vote: vote,
+                  refreshing: refreshing,
+                  onSave: () => _save(vote),
+                ),
               ],
             ),
             error: (e, _) => _Message(
@@ -750,16 +769,20 @@ class _UnrespondedNames extends ConsumerWidget {
 /// - "내 시간 저장": 고를 수 있는 투표(투표 중, 마감 전)에서 관리자·구성원 모두에게 보입니다.
 /// - "일정 확정하기": 관리자에게만, 확정할 수 있는 투표에서 보입니다.
 /// - 확정된 투표는 모두에게 "일정 보기" 하나만 보여줍니다. (Figma 확정됨)
-/// 저장이나 확정이 진행 중이면 두 버튼 모두 눌리지 않습니다.
+/// 저장이나 확정이 진행 중이거나 투표를 다시 불러오는 중이면 두 버튼 모두 눌리지 않습니다.
 class _ActionBar extends ConsumerWidget {
   const _ActionBar({
     required this.id,
     required this.vote,
+    required this.refreshing,
     required this.onSave,
   });
 
   final VoteId id;
   final Vote vote;
+
+  /// 투표를 다시 불러오는 중입니다. [vote] 는 지난 값입니다.
+  final bool refreshing;
   final VoidCallback onSave;
 
   /// 확정 시트에서 후보를 고르면 확정을 요청합니다. 그냥 닫으면 그대로 둡니다.
@@ -821,7 +844,7 @@ class _ActionBar extends ConsumerWidget {
       voteSubmitProvider(id)
           .select((s) => s.status == VoteSubmitStatus.submitting),
     );
-    final busy = confirming || saving;
+    final busy = confirming || saving || refreshing;
     final canConfirm = isAdmin && vote.canConfirm;
     if (!vote.votingOpen && !canConfirm) return const SizedBox.shrink();
 
