@@ -26,8 +26,8 @@ import '../../fakes/vote_fixtures.dart';
 void main() {
   late FakeVoteRepository repository;
 
-  /// 투표 화면을 띄운 push 의 결과. 확정하고 화면이 닫히면 true 가 담깁니다.
-  late Future<bool?> pushed;
+  /// 투표 화면을 띄운 push. 화면이 닫히면 끝납니다.
+  late Future<Object?> pushed;
 
   setUp(() {
     repository = FakeVoteRepository(
@@ -71,7 +71,7 @@ void main() {
         child: MaterialApp.router(routerConfig: router),
       ),
     );
-    pushed = router.push<bool>('/vote');
+    pushed = router.push<Object?>('/vote');
     await tester.pumpAndSettle();
   }
 
@@ -177,7 +177,7 @@ void main() {
       expect(find.text('5명 가능'), findsOneWidget);
     });
 
-    testWidgets('확정 시트에서 고른 시간으로 확정하면 true 를 돌려주며 화면을 닫는다', (tester) async {
+    testWidgets('확정 시트에서 고른 시간으로 확정하면 화면을 닫는다', (tester) async {
       await pumpPage(tester);
       await openConfirmSheet(tester);
 
@@ -190,8 +190,47 @@ void main() {
         repository.confirmCalls.single['meetingTime'],
         DateTime(2099, 10, 13, 19),
       );
-      expect(await pushed, isTrue);
+      await pushed;
       expect(find.text('목록'), findsOneWidget);
+    });
+
+    testWidgets('이전 화면 없이 열려도 확정하면 일정 목록으로 이동한다', (tester) async {
+      final router = GoRouter(
+        initialLocation: '/meetings/1/schedule-votes/7',
+        routes: [
+          GoRoute(
+            path: '/meetings/:meetingId/schedules',
+            builder: (_, _) => const Scaffold(body: Text('일정 목록')),
+          ),
+          GoRoute(
+            path: '/meetings/:meetingId/schedule-votes/:scheduleId',
+            builder: (_, _) => const VotePage(meetingId: 1, scheduleId: 7),
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          retry: (_, _) => null,
+          overrides: [
+            voteRepositoryProvider.overrideWithValue(repository),
+            groupMyRoleProvider.overrideWith(
+              (ref, groupId) async => MemberRole.admin,
+            ),
+          ],
+          child: MaterialApp.router(routerConfig: router),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(router.canPop(), isFalse);
+
+      await openConfirmSheet(tester);
+      await tester.tap(find.text('이 시간으로 확정'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(repository.confirmCalls, hasLength(1));
+      expect(find.text('일정 목록'), findsOneWidget);
+      expect(find.byType(VotePage), findsNothing);
     });
 
     testWidgets('다른 관리자가 먼저 확정해 실패하면 화면에 남아 안내하고 확정된 투표를 다시 보여준다', (
@@ -215,9 +254,7 @@ void main() {
       expect(find.text('일정 확정하기'), findsNothing);
     });
 
-    testWidgets('확정하는 중에는 상단 뒤로 버튼으로도 화면을 닫지 않고 끝나면 true 를 돌려준다', (
-      tester,
-    ) async {
+    testWidgets('확정하는 중에는 상단 뒤로 버튼으로도 화면을 닫지 않고 끝나면 닫는다', (tester) async {
       repository.confirmCompleter = Completer<void>();
       await pumpPage(tester);
       await openConfirmSheet(tester);
@@ -232,7 +269,7 @@ void main() {
       repository.confirmCompleter!.complete();
       await tester.pumpAndSettle();
 
-      expect(await pushed, isTrue);
+      await pushed;
       expect(find.text('목록'), findsOneWidget);
     });
 

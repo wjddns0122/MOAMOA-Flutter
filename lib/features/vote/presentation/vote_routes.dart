@@ -12,7 +12,7 @@ String voteCreatePath(int meetingId) =>
     '/meetings/$meetingId/schedule-votes/new';
 
 /// 투표 화면 경로입니다. 다른 기능(일정 목록)에서 이동할 때 씁니다.
-/// 일정을 확정하면 true 를 돌려주며 닫힙니다.
+/// 일정을 확정하면 닫힙니다. 돌려주는 값은 없고, 연 쪽은 돌아올 때 일정을 다시 불러옵니다.
 String votePath(int meetingId, int scheduleId) =>
     '/meetings/$meetingId/schedule-votes/$scheduleId';
 

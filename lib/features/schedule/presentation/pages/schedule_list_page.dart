@@ -29,7 +29,8 @@ ScheduleListRequest _monthRequest(int meetingId, DateTime month) =>
     );
 
 /// 일정을 엽니다. 투표 중인 일정은 투표 화면으로 가고, 그 밖의 일정은 상세로 갑니다.
-/// 투표 화면에서 확정하고 돌아오면(true) 일정 목록·상세를 다시 불러옵니다.
+/// 투표 화면에서 돌아오면 일정 목록·상세를 다시 불러옵니다.
+/// 내가 확정하지 않았어도 그 사이 다른 관리자가 확정·취소했을 수 있어(투표 화면은 422 뒤 새 상태를 봅니다) 결과와 상관없이 갱신합니다.
 /// 투표 쪽이 일정 Provider 를 알지 않도록 갱신은 이 화면에서 합니다.
 Future<void> _openSchedule(
   BuildContext context,
@@ -41,8 +42,8 @@ Future<void> _openSchedule(
     context.push('${_basePath(meetingId)}/${schedule.id}');
     return;
   }
-  final confirmed = await context.push<bool>(votePath(meetingId, schedule.id));
-  if (confirmed != true || !context.mounted) return;
+  await context.push<void>(votePath(meetingId, schedule.id));
+  if (!context.mounted) return;
   ref.invalidate(scheduleListProvider);
   ref.invalidate(
     scheduleDetailProvider(

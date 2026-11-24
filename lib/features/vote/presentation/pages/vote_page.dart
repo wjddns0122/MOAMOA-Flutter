@@ -17,6 +17,7 @@ import '../viewmodels/vote_confirm_status.dart';
 import '../vote_display.dart';
 import '../vote_format.dart';
 import '../vote_id.dart';
+import '../vote_navigation.dart';
 import '../widgets/vote_colors.dart';
 import '../widgets/vote_confirm_sheet.dart';
 import '../widgets/vote_primary_button.dart';
@@ -26,8 +27,9 @@ import '../widgets/vote_primary_button.dart';
 ///
 /// - 표: 열은 후보 날짜, 줄은 후보 시각입니다. 칸 숫자는 가능 인원이고 많을수록 진합니다. 내가 고른 칸은 테두리로 표시합니다.
 /// - 응답 현황: 관리자는 응답·미응답 수와 미응답 구성원 이름을, 구성원은 응답 인원만 봅니다.
-/// - 확정(관리자): "일정 확정하기" → 확정 시트에서 후보를 고르면 확정하고, 성공하면 true 를 돌려주며 화면을 닫습니다.
-///   일정 목록 갱신은 이 화면을 연 쪽(일정 목록)이 돌려받은 값을 보고 합니다.
+/// - 확정(관리자): "일정 확정하기" → 확정 시트에서 후보를 고르면 확정하고, 성공하면 화면을 닫습니다.
+///   일정 목록 갱신은 이 화면을 연 쪽(일정 목록)이 돌아올 때 합니다.
+///   링크 등으로 바로 열려 닫을 화면이 없으면 일정 목록으로 이동합니다. ([finishVoteScreen])
 /// - 내 가능 시간 고르기·저장(구성원 응답, API 5-3)은 다음 단계에서 붙입니다.
 ///
 /// 투표는 [voteProvider] 로 조회하고, 확정 과정은 [voteConfirmProvider] 가 관리합니다.
@@ -43,15 +45,21 @@ class VotePage extends ConsumerWidget {
 
   VoteId get _id => VoteId(meetingId: meetingId, scheduleId: scheduleId);
 
-  /// 확정 상태가 바뀌면: 성공이면 true 를 돌려주며 닫고, 실패하면 안내합니다.
+  /// 확정 상태가 바뀌면: 성공이면 화면을 끝내고, 실패하면 안내합니다.
   void _onConfirmChanged(
     BuildContext context,
+    WidgetRef ref,
     VoteConfirmState? previous,
     VoteConfirmState next,
   ) {
     if (previous?.status == next.status) return;
     if (next.status == VoteConfirmStatus.success) {
-      context.pop(true);
+      finishVoteScreen(
+        context,
+        ref,
+        meetingId: meetingId,
+        scheduleId: scheduleId,
+      );
     } else if (next.status == VoteConfirmStatus.failure) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(next.errorMessage ?? '일정을 확정하지 못했어요')),
@@ -63,7 +71,7 @@ class VotePage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.listen(
       voteConfirmProvider(_id),
-      (previous, next) => _onConfirmChanged(context, previous, next),
+      (previous, next) => _onConfirmChanged(context, ref, previous, next),
     );
     final confirming = ref.watch(
       voteConfirmProvider(_id)
