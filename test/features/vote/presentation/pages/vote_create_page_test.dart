@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:moamoa/core/errors/api_error_code.dart';
 import 'package:moamoa/core/errors/api_exception.dart';
+import 'package:moamoa/features/schedule/domain/entities/schedule_list_request.dart';
+import 'package:moamoa/features/schedule/presentation/providers/schedule_providers.dart';
 import 'package:moamoa/features/vote/presentation/pages/vote_create_page.dart';
 import 'package:moamoa/features/vote/presentation/providers/vote_providers.dart';
 import 'package:moamoa/features/vote/presentation/viewmodels/vote_time_range.dart';
@@ -13,6 +15,7 @@ import 'package:moamoa/features/vote/presentation/vote_format.dart';
 import 'package:moamoa/features/vote/presentation/widgets/vote_field.dart';
 import 'package:moamoa/features/vote/presentation/widgets/vote_time_sheet.dart';
 
+import '../../../schedule/fakes/fake_schedule_repository.dart';
 import '../../fakes/fake_vote_repository.dart';
 
 void main() {
@@ -150,6 +153,62 @@ void main() {
       expect(repository.createCalls, hasLength(1));
       expect(find.text('목록'), findsOneWidget);
       expect(await pushed, 21);
+    });
+
+    testWidgets('이전 화면 없이 열려도 만들면 일정 목록으로 이동하고 목록을 다시 불러온다', (tester) async {
+      final schedules = FakeScheduleRepository();
+      final listRequest = ScheduleListRequest(
+        meetingId: 1,
+        startDate: DateTime(2099, 10),
+        endDate: DateTime(2099, 10, 31),
+      );
+      final router = GoRouter(
+        initialLocation: '/meetings/1/schedules',
+        routes: [
+          GoRoute(
+            path: '/meetings/:meetingId/schedules',
+            builder: (_, _) => Consumer(
+              builder: (_, ref, _) {
+                ref.watch(scheduleListProvider(listRequest));
+                return const Scaffold(body: Text('일정 목록'));
+              },
+            ),
+          ),
+          GoRoute(
+            path: '/create',
+            builder: (_, _) => const VoteCreatePage(meetingId: 1),
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          retry: (_, _) => null,
+          overrides: [
+            voteRepositoryProvider.overrideWithValue(repository),
+            scheduleRepositoryProvider.overrideWithValue(schedules),
+          ],
+          child: MaterialApp.router(routerConfig: router),
+        ),
+      );
+      await tester.pumpAndSettle();
+      // 링크로 바로 들어온 것처럼 만들기 화면만 남깁니다. 앞서 불러온 목록은 Provider 에 남아 있습니다.
+      router.go('/create');
+      await tester.pumpAndSettle();
+      expect(router.canPop(), isFalse);
+      final before = schedules.listCallCount;
+      fillAll(
+        ProviderScope.containerOf(tester.element(find.byType(VoteCreatePage))),
+      );
+      await tester.pump();
+
+      await tester.tap(find.text('투표 시작하기'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('일정 목록'), findsOneWidget);
+      expect(find.byType(VoteCreatePage), findsNothing);
+      expect(repository.createCalls, hasLength(1));
+      expect(schedules.listCallCount, greaterThan(before));
     });
 
     testWidgets('만드는 중에는 뒤로가기로 화면을 닫지 않고 끝나면 일정 id 를 돌려준다', (tester) async {

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:moamoa/core/theme/moa_theme.dart';
 import 'package:moamoa/core/widgets/moa_app_bar.dart';
 import 'package:moamoa/features/schedule/presentation/schedule_format.dart';
@@ -11,6 +10,7 @@ import '../viewmodels/vote_create_state.dart';
 import '../viewmodels/vote_create_status.dart';
 import '../viewmodels/vote_create_view_model.dart';
 import '../viewmodels/vote_time_range.dart';
+import '../vote_navigation.dart';
 import '../widgets/vote_colors.dart';
 import '../widgets/vote_date_sheet.dart';
 import '../widgets/vote_field.dart';
@@ -23,6 +23,7 @@ import '../widgets/vote_time_sheet.dart';
 /// - 빈 항목이 있으면 버튼이 회색이고, 누르면 빈 항목마다 오류 문구를 보여줍니다.
 /// - 결과: 만들면 만든 일정 id 를 돌려주며 화면을 닫고, 실패하면 서버 문구를 하단 안내(SnackBar)로 보여줍니다.
 ///   일정 목록 갱신은 이 화면을 연 쪽(일정 목록)이 돌려받은 id 를 보고 합니다.
+///   링크 등으로 바로 열려 닫을 화면이 없으면 일정 목록으로 이동합니다. ([finishVoteScreen])
 ///
 /// [meetingId] 는 투표를 만들 모임입니다. 입력값과 제출 상태는 [voteCreateProvider] 가 관리합니다.
 class VoteCreatePage extends ConsumerWidget {
@@ -30,15 +31,21 @@ class VoteCreatePage extends ConsumerWidget {
 
   final int meetingId;
 
-  /// 제출 상태가 바뀌면: 성공이면 만든 일정 id 를 돌려주며 닫고, 실패하면 안내합니다.
+  /// 제출 상태가 바뀌면: 성공이면 만든 일정 id 를 돌려주며 끝내고, 실패하면 안내합니다.
   void _onStateChanged(
     BuildContext context,
+    WidgetRef ref,
     VoteCreateState? previous,
     VoteCreateState next,
   ) {
     if (previous?.status == next.status) return;
     if (next.status == VoteCreateStatus.success) {
-      context.pop(next.createdScheduleId);
+      finishVoteScreen(
+        context,
+        ref,
+        meetingId: meetingId,
+        result: next.createdScheduleId,
+      );
     } else if (next.status == VoteCreateStatus.failure) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(next.errorMessage ?? '투표를 만들지 못했어요')),
@@ -50,7 +57,7 @@ class VoteCreatePage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.listen(
       voteCreateProvider(meetingId),
-      (previous, next) => _onStateChanged(context, previous, next),
+      (previous, next) => _onStateChanged(context, ref, previous, next),
     );
 
     final submitting =
