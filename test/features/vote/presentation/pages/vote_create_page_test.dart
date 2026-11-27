@@ -56,6 +56,51 @@ void main() {
     );
   }
 
+  /// 링크로 바로 들어온 것처럼 일정 목록을 한 번 불러온 뒤 `go` 로 만들기 화면만 남깁니다.
+  /// 닫을 화면이 없어 `pop` 할 수 없고, 앞서 불러온 목록은 Provider 에 남아 있습니다.
+  Future<GoRouter> pumpDirectPage(
+    WidgetTester tester,
+    FakeScheduleRepository schedules,
+  ) async {
+    final listRequest = ScheduleListRequest(
+      meetingId: 1,
+      startDate: DateTime(2099, 10),
+      endDate: DateTime(2099, 10, 31),
+    );
+    final router = GoRouter(
+      initialLocation: '/meetings/1/schedules',
+      routes: [
+        GoRoute(
+          path: '/meetings/:meetingId/schedules',
+          builder: (_, _) => Consumer(
+            builder: (_, ref, _) {
+              ref.watch(scheduleListProvider(listRequest));
+              return const Scaffold(body: Text('일정 목록'));
+            },
+          ),
+        ),
+        GoRoute(
+          path: '/create',
+          builder: (_, _) => const VoteCreatePage(meetingId: 1),
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        retry: (_, _) => null,
+        overrides: [
+          voteRepositoryProvider.overrideWithValue(repository),
+          scheduleRepositoryProvider.overrideWithValue(schedules),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+    router.go('/create');
+    await tester.pumpAndSettle();
+    return router;
+  }
+
   void fillAll(ProviderContainer container) {
     container.read(voteCreateProvider(1).notifier)
       ..changeTitle('10월 정기 모임')
@@ -157,43 +202,7 @@ void main() {
 
     testWidgets('이전 화면 없이 열려도 만들면 일정 목록으로 이동하고 목록을 다시 불러온다', (tester) async {
       final schedules = FakeScheduleRepository();
-      final listRequest = ScheduleListRequest(
-        meetingId: 1,
-        startDate: DateTime(2099, 10),
-        endDate: DateTime(2099, 10, 31),
-      );
-      final router = GoRouter(
-        initialLocation: '/meetings/1/schedules',
-        routes: [
-          GoRoute(
-            path: '/meetings/:meetingId/schedules',
-            builder: (_, _) => Consumer(
-              builder: (_, ref, _) {
-                ref.watch(scheduleListProvider(listRequest));
-                return const Scaffold(body: Text('일정 목록'));
-              },
-            ),
-          ),
-          GoRoute(
-            path: '/create',
-            builder: (_, _) => const VoteCreatePage(meetingId: 1),
-          ),
-        ],
-      );
-      await tester.pumpWidget(
-        ProviderScope(
-          retry: (_, _) => null,
-          overrides: [
-            voteRepositoryProvider.overrideWithValue(repository),
-            scheduleRepositoryProvider.overrideWithValue(schedules),
-          ],
-          child: MaterialApp.router(routerConfig: router),
-        ),
-      );
-      await tester.pumpAndSettle();
-      // 링크로 바로 들어온 것처럼 만들기 화면만 남깁니다. 앞서 불러온 목록은 Provider 에 남아 있습니다.
-      router.go('/create');
-      await tester.pumpAndSettle();
+      final router = await pumpDirectPage(tester, schedules);
       expect(router.canPop(), isFalse);
       final before = schedules.listCallCount;
       fillAll(
@@ -209,6 +218,56 @@ void main() {
       expect(find.byType(VoteCreatePage), findsNothing);
       expect(repository.createCalls, hasLength(1));
       expect(schedules.listCallCount, greaterThan(before));
+    });
+
+    testWidgets('목록에서 연 화면은 상단 뒤로 버튼으로 닫고 아무 값도 돌려주지 않는다', (tester) async {
+      await pumpPage(tester);
+
+      await tester.tap(find.byType(IconButton));
+      await tester.pumpAndSettle();
+
+      expect(find.text('목록'), findsOneWidget);
+      expect(await pushed, isNull);
+      expect(repository.createCalls, isEmpty);
+    });
+
+    testWidgets('이전 화면 없이 열려도 상단 뒤로 버튼을 누르면 만들지 않고 일정 목록으로 이동한다', (
+      tester,
+    ) async {
+      final router = await pumpDirectPage(tester, FakeScheduleRepository());
+      expect(router.canPop(), isFalse);
+
+      await tester.tap(find.byType(IconButton));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('일정 목록'), findsOneWidget);
+      expect(find.byType(VoteCreatePage), findsNothing);
+      expect(repository.createCalls, isEmpty);
+    });
+
+    testWidgets('이전 화면 없이 연 화면에서 만들기에 실패한 뒤 상단 뒤로 버튼을 누르면 일정 목록으로 이동한다', (
+      tester,
+    ) async {
+      repository.error = const ApiException(
+        code: ApiErrorCode.validation,
+        message: '투표 마감 일시는 현재 이후여야 합니다.',
+      );
+      await pumpDirectPage(tester, FakeScheduleRepository());
+      fillAll(
+        ProviderScope.containerOf(tester.element(find.byType(VoteCreatePage))),
+      );
+      await tester.pump();
+      await tester.tap(find.text('투표 시작하기'));
+      await tester.pumpAndSettle();
+      expect(find.text('투표 마감 일시는 현재 이후여야 합니다.'), findsOneWidget);
+
+      await tester.tap(find.byType(IconButton));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('일정 목록'), findsOneWidget);
+      expect(find.byType(VoteCreatePage), findsNothing);
     });
 
     testWidgets('만드는 중에는 뒤로가기로 화면을 닫지 않고 끝나면 일정 id 를 돌려준다', (tester) async {

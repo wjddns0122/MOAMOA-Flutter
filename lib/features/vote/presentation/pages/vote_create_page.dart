@@ -66,11 +66,15 @@ class VoteCreatePage extends ConsumerWidget {
 
     // 만드는 중에 닫으면 서버에는 투표가 생기지만 목록이 만든 id 를 받지 못해 갱신되지 않습니다.
     // 시스템 뒤로가기·스와이프는 PopScope 가, 상단 바 버튼(context.pop 이라 PopScope 를 거치지 않음)은 backEnabled 가 막습니다.
+    // 상단 바 버튼은 만들지 않고 나갈 때도 finishVoteScreen 으로 끝내, 링크로 바로 열린 경우 일정 목록으로 보냅니다.
     return PopScope(
       canPop: !submitting,
       child: Scaffold(
         backgroundColor: MoaColors.page,
-        appBar: MoaAppBar(backEnabled: !submitting),
+        appBar: MoaAppBar(
+          backEnabled: !submitting,
+          onBack: () => finishVoteScreen(context, ref, meetingId: meetingId),
+        ),
         body: SafeArea(
           child: Column(
             children: [
