@@ -82,6 +82,8 @@ class _VotePageState extends ConsumerState<VotePage> {
 
   /// 고른 칸을 내 응답으로 제출합니다. 하나도 고르지 않았으면 먼저 "가능한 시간 없음" 이 맞는지 묻습니다.
   Future<void> _save(Vote vote) async {
+    // 팝업을 기다리는 사이 같은 route 에서 투표가 바뀔 수 있어(go), 보낼 투표를 지금 정해 둡니다.
+    final id = _id;
     final selected = _selectedOf(vote);
     if (selected.isEmpty) {
       final confirmed = await showMoaConfirmDialog(
@@ -89,10 +91,11 @@ class _VotePageState extends ConsumerState<VotePage> {
         title: '가능한 시간이 없다고 보낼까요?',
         confirmLabel: '보내기',
       );
-      if (confirmed != true || !mounted) return;
+      // 그 사이 다른 투표로 바뀌었으면 이전 투표에서 한 확인이므로 보내지 않습니다. 보내면 새 투표의 응답을 빈 선택으로 덮습니다.
+      if (confirmed != true || !mounted || id != _id) return;
     }
     // 후보 순서(오름차순)대로 보냅니다.
-    await ref.read(voteSubmitProvider(_id).notifier).submit([
+    await ref.read(voteSubmitProvider(id).notifier).submit([
       for (final candidate in vote.candidates)
         if (selected.contains(candidate.meetingTime)) candidate.meetingTime,
     ]);

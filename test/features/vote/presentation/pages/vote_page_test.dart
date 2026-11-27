@@ -840,14 +840,15 @@ void main() {
       },
     );
 
-    testWidgets('같은 화면에서 투표 번호만 바뀌면 이전 투표에서 고른 칸을 버린다', (tester) async {
+    /// 주소의 모임·투표 번호로 투표 7(모임 1)을 띄웁니다. `go` 로 번호만 바꾸면 같은 State 를 그대로 씁니다.
+    Future<GoRouter> pumpRoutedPage(WidgetTester tester) async {
       final router = GoRouter(
         initialLocation: '/meetings/1/schedule-votes/7',
         routes: [
           GoRoute(
             path: '/meetings/:meetingId/schedule-votes/:scheduleId',
             builder: (_, state) => VotePage(
-              meetingId: 1,
+              meetingId: int.parse(state.pathParameters['meetingId']!),
               scheduleId: int.parse(state.pathParameters['scheduleId']!),
             ),
           ),
@@ -866,6 +867,34 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      return router;
+    }
+
+    for (final (label, next) in [
+      ('투표 번호', '/meetings/1/schedule-votes/8'),
+      ('모임 번호', '/meetings/2/schedule-votes/7'),
+    ]) {
+      testWidgets('가능한 시간이 없는지 묻는 팝업이 떠 있는 사이 $label가 바뀌면 보내기를 눌러도 제출하지 않는다', (
+        tester,
+      ) async {
+        final router = await pumpRoutedPage(tester);
+        await tester.tap(find.text('5')); // 투표 7 에서 골라 둔 칸 해제
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('내 시간 저장'));
+        await tester.pumpAndSettle();
+        expect(find.text('가능한 시간이 없다고 보낼까요?'), findsOneWidget);
+
+        router.go(next);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('보내기'));
+        await tester.pumpAndSettle();
+
+        expect(repository.submitCalls, isEmpty);
+      });
+    }
+
+    testWidgets('같은 화면에서 투표 번호만 바뀌면 이전 투표에서 고른 칸을 버린다', (tester) async {
+      final router = await pumpRoutedPage(tester);
       await tester.tap(find.text('7')); // 투표 7 에서 10/14 19:00 을 더 고름
       await tester.pumpAndSettle();
 
