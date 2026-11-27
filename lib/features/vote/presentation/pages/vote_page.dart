@@ -4,10 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:go_router/go_router.dart';
 import 'package:moamoa/core/theme/moa_theme.dart';
 import 'package:moamoa/core/utils/moa_snack_bar.dart';
 import 'package:moamoa/core/widgets/moa_app_bar.dart';
+import 'package:moamoa/features/schedule/presentation/schedule_navigation.dart';
 
 import '../../domain/entities/vote.dart';
 import '../../domain/entities/vote_status.dart';
@@ -82,6 +82,7 @@ class VotePage extends ConsumerWidget {
 
     // 확정 중에 닫으면 목록이 결과를 받지 못해 갱신되지 않습니다.
     // 시스템 뒤로가기·스와이프는 PopScope 가, 상단 바 버튼(context.pop 이라 PopScope 를 거치지 않음)은 backEnabled 가 막습니다.
+    // 상단 바 버튼은 확정하지 않고 나갈 때도 finishVoteScreen 으로 끝내, 링크로 바로 열린 경우 일정 목록으로 보냅니다.
     return PopScope(
       canPop: !confirming,
       child: Scaffold(
@@ -89,6 +90,12 @@ class VotePage extends ConsumerWidget {
         // 공유 버튼은 투표를 불러온 뒤에만 보여줍니다.
         appBar: MoaAppBar(
           backEnabled: !confirming,
+          onBack: () => finishVoteScreen(
+            context,
+            ref,
+            meetingId: meetingId,
+            scheduleId: scheduleId,
+          ),
           actions: [
             if (vote.value case final loaded?) _ShareButton(vote: loaded),
           ],
@@ -637,12 +644,6 @@ class _ConfirmBar extends ConsumerWidget {
   final VoteId id;
   final Vote vote;
 
-  /// 확정된 일정의 상세로 이동합니다. 뒤로 가면 투표 화면이 아니라 이전 화면(일정 목록)으로 돌아갑니다.
-  /// 일정 상세 경로(`/meetings/:meetingId/schedules/:scheduleId`)를 그대로 씁니다.
-  void _openSchedule(BuildContext context) => context.pushReplacement(
-    '/meetings/${id.meetingId}/schedules/${id.scheduleId}',
-  );
-
   /// 확정 시트에서 후보를 고르면 확정을 요청합니다. 그냥 닫으면 그대로 둡니다.
   Future<void> _openConfirmSheet(BuildContext context, WidgetRef ref) async {
     final meetingTime = await showModalBottomSheet<DateTime>(
@@ -669,9 +670,15 @@ class _ConfirmBar extends ConsumerWidget {
     if (vote.status == VoteStatus.confirmed) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+        // 확정된 일정의 상세로 바꿉니다. 앞서 본 상세가 남아 있어도 확정된 일시를 다시 불러옵니다.
         child: VotePrimaryButton(
           label: '일정 보기',
-          onPressed: () => _openSchedule(context),
+          onPressed: () => replaceWithScheduleDetail(
+            context,
+            ref,
+            meetingId: id.meetingId,
+            scheduleId: id.scheduleId,
+          ),
         ),
       );
     }

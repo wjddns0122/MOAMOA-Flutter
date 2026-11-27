@@ -9,7 +9,10 @@ import 'package:moamoa/core/errors/api_error_code.dart';
 import 'package:moamoa/core/errors/api_exception.dart';
 import 'package:moamoa/features/group/domain/entities/member_role.dart';
 import 'package:moamoa/features/group/presentation/providers/group_providers.dart';
+import 'package:moamoa/features/schedule/domain/entities/schedule.dart';
+import 'package:moamoa/features/schedule/presentation/providers/schedule_providers.dart';
 import 'package:moamoa/features/schedule/presentation/schedule_format.dart';
+import 'package:moamoa/features/schedule/presentation/schedule_id.dart';
 import 'package:moamoa/features/vote/domain/entities/vote.dart';
 import 'package:moamoa/features/vote/domain/entities/vote_candidate.dart';
 import 'package:moamoa/features/vote/domain/entities/vote_member_response.dart';
@@ -20,6 +23,7 @@ import 'package:moamoa/features/vote/presentation/providers/vote_providers.dart'
 import 'package:moamoa/features/vote/presentation/widgets/vote_confirm_sheet.dart';
 import 'package:moamoa/features/vote/presentation/vote_format.dart';
 
+import '../../../schedule/fakes/fake_schedule_repository.dart';
 import '../../fakes/fake_vote_repository.dart';
 import '../../fakes/vote_fixtures.dart';
 
@@ -73,6 +77,37 @@ void main() {
     );
     pushed = router.push<Object?>('/vote');
     await tester.pumpAndSettle();
+  }
+
+  /// 링크로 바로 들어온 것처럼 투표 화면만 띄웁니다. 닫을 화면이 없어 `pop` 할 수 없습니다.
+  Future<GoRouter> pumpDirectPage(WidgetTester tester) async {
+    final router = GoRouter(
+      initialLocation: '/meetings/1/schedule-votes/7',
+      routes: [
+        GoRoute(
+          path: '/meetings/:meetingId/schedules',
+          builder: (_, _) => const Scaffold(body: Text('일정 목록')),
+        ),
+        GoRoute(
+          path: '/meetings/:meetingId/schedule-votes/:scheduleId',
+          builder: (_, _) => const VotePage(meetingId: 1, scheduleId: 7),
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        retry: (_, _) => null,
+        overrides: [
+          voteRepositoryProvider.overrideWithValue(repository),
+          groupMyRoleProvider.overrideWith(
+            (ref, groupId) async => MemberRole.admin,
+          ),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+    return router;
   }
 
   Future<void> openConfirmSheet(WidgetTester tester) async {
@@ -195,32 +230,7 @@ void main() {
     });
 
     testWidgets('이전 화면 없이 열려도 확정하면 일정 목록으로 이동한다', (tester) async {
-      final router = GoRouter(
-        initialLocation: '/meetings/1/schedule-votes/7',
-        routes: [
-          GoRoute(
-            path: '/meetings/:meetingId/schedules',
-            builder: (_, _) => const Scaffold(body: Text('일정 목록')),
-          ),
-          GoRoute(
-            path: '/meetings/:meetingId/schedule-votes/:scheduleId',
-            builder: (_, _) => const VotePage(meetingId: 1, scheduleId: 7),
-          ),
-        ],
-      );
-      await tester.pumpWidget(
-        ProviderScope(
-          retry: (_, _) => null,
-          overrides: [
-            voteRepositoryProvider.overrideWithValue(repository),
-            groupMyRoleProvider.overrideWith(
-              (ref, groupId) async => MemberRole.admin,
-            ),
-          ],
-          child: MaterialApp.router(routerConfig: router),
-        ),
-      );
-      await tester.pumpAndSettle();
+      final router = await pumpDirectPage(tester);
       expect(router.canPop(), isFalse);
 
       await openConfirmSheet(tester);
@@ -232,6 +242,52 @@ void main() {
       expect(find.text('일정 목록'), findsOneWidget);
       expect(find.byType(VotePage), findsNothing);
     });
+
+    testWidgets('목록에서 연 화면은 상단 뒤로 버튼으로 닫는다', (tester) async {
+      await pumpPage(tester);
+
+      await tester.tap(find.byType(IconButton).first);
+      await tester.pumpAndSettle();
+
+      await pushed;
+      expect(find.text('목록'), findsOneWidget);
+    });
+
+    testWidgets('이전 화면 없이 열려도 상단 뒤로 버튼을 누르면 일정 목록으로 이동한다', (tester) async {
+      final router = await pumpDirectPage(tester);
+      expect(router.canPop(), isFalse);
+
+      await tester.tap(find.byType(IconButton).first);
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('일정 목록'), findsOneWidget);
+      expect(find.byType(VotePage), findsNothing);
+    });
+
+    testWidgets(
+      '이전 화면 없이 연 투표에서 다른 관리자가 먼저 확정해 실패한 뒤 상단 뒤로 버튼을 누르면 일정 목록으로 이동한다',
+      (tester) async {
+        await pumpDirectPage(tester);
+        await openConfirmSheet(tester);
+        repository
+          ..confirmError = const ApiException(
+            code: ApiErrorCode.unprocessableEntity,
+            message: '이미 확정된 일정입니다.',
+          )
+          ..vote = sampleVote(status: VoteStatus.confirmed, votingOpen: false);
+        await tester.tap(find.text('이 시간으로 확정'));
+        await tester.pumpAndSettle();
+        expect(find.text('이미 확정된 일정입니다.'), findsOneWidget);
+
+        await tester.tap(find.byType(IconButton).first);
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.text('일정 목록'), findsOneWidget);
+        expect(find.byType(VotePage), findsNothing);
+      },
+    );
 
     testWidgets('다른 관리자가 먼저 확정해 실패하면 화면에 남아 안내하고 확정된 투표를 다시 보여준다', (
       tester,
@@ -361,6 +417,70 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('일정 상세 7'), findsOneWidget);
+    });
+
+    testWidgets('"일정 보기" 는 앞서 불러온 일정 상세를 다시 불러와 확정된 일시를 보여준다', (tester) async {
+      repository.vote = sampleVote(
+        status: VoteStatus.confirmed,
+        votingOpen: false,
+      );
+      final schedules = FakeScheduleRepository(
+        schedules: [
+          Schedule(id: 7, title: '정모', startAt: DateTime(2026, 10, 13, 18)),
+        ],
+      );
+      final router = GoRouter(
+        initialLocation: '/meetings/1/schedules/7',
+        routes: [
+          GoRoute(
+            path: '/meetings/:meetingId/schedules/:scheduleId',
+            builder: (_, _) => Consumer(
+              builder: (_, ref, _) {
+                final schedule = ref
+                    .watch(
+                      scheduleDetailProvider(
+                        const ScheduleId(meetingId: 1, scheduleId: 7),
+                      ),
+                    )
+                    .value;
+                return Scaffold(body: Text('일정 상세 ${schedule?.startAt.day}일'));
+              },
+            ),
+          ),
+          GoRoute(
+            path: '/vote',
+            builder: (_, _) => const VotePage(meetingId: 1, scheduleId: 7),
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          retry: (_, _) => null,
+          overrides: [
+            voteRepositoryProvider.overrideWithValue(repository),
+            scheduleRepositoryProvider.overrideWithValue(schedules),
+            groupMyRoleProvider.overrideWith(
+              (ref, groupId) async => MemberRole.member,
+            ),
+          ],
+          child: MaterialApp.router(routerConfig: router),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('일정 상세 13일'), findsOneWidget);
+      // 상세를 본 뒤 목록을 거쳐 투표로 들어온 것과 같습니다. 상세 화면은 없어도 불러온 값은 Provider 에 남습니다.
+      router.go('/vote');
+      await tester.pumpAndSettle();
+      // 그 사이 다른 관리자가 다른 시간으로 확정했습니다.
+      schedules.schedules = [
+        Schedule(id: 7, title: '정모', startAt: DateTime(2026, 10, 14, 19)),
+      ];
+
+      await tester.tap(find.text('일정 보기'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('일정 상세 14일'), findsOneWidget);
+      expect(schedules.detailCallCount, 2);
     });
 
     testWidgets('취소된 투표는 안내만 보여주고 버튼은 없다', (tester) async {

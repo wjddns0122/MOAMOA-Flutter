@@ -28,3 +28,25 @@ void goToScheduleList(
   }
   context.go(scheduleListPath(meetingId));
 }
+
+/// 일정 상세 경로입니다. 예: `/meetings/1/schedules/20` ([scheduleRoutes] 의 상세 route)
+String scheduleDetailPath(int meetingId, int scheduleId) =>
+    '/meetings/$meetingId/schedules/$scheduleId';
+
+/// 다른 기능(투표)의 화면을 일정 상세로 바꿉니다. 뒤로 가면 그 화면이 아니라 이전 화면(일정 목록)으로 돌아갑니다.
+///
+/// 일정 상세는 자동으로 버려지지 않아서, 앞서 본 적이 있으면 그 사이 확정된 일시 대신 예전 값을 보여줍니다.
+/// 그래서 상세를 다시 불러오게 한 뒤 이동합니다.
+void replaceWithScheduleDetail(
+  BuildContext context,
+  WidgetRef ref, {
+  required int meetingId,
+  required int scheduleId,
+}) {
+  ref.invalidate(
+    scheduleDetailProvider(
+      ScheduleId(meetingId: meetingId, scheduleId: scheduleId),
+    ),
+  );
+  context.pushReplacement(scheduleDetailPath(meetingId, scheduleId));
+}
